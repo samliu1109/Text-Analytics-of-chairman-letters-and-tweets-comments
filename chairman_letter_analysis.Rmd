@@ -1,0 +1,260 @@
+---
+title: "chairman_letter_analysis"
+author: "Poyi (Sam) Liu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(pdftools)
+```
+
+## load data and convert to dataframe
+```{r}
+IBMpdf_text <- pdf_text("D:/medium/web scraping analytics/IBM_2020_Annual_Report_Letter.pdf")
+micropdf_text <- pdf_text("D:/medium/web scraping analytics/microsoft letter.pdf")
+amazonpdf_text <- pdf_text("D:/medium/web scraping analytics/Amazon-2020-Shareholder-Letter-and-1997-Shareholder-Letter.pdf")
+
+```
+
+```{r}
+IBM_text <- as.data.frame(IBMpdf_text)
+microsoft_text <- as.data.frame(micropdf_text)
+amazon_text <- as.data.frame(amazonpdf_text)
+```
+
+## Term Frequency & Wordcloud  
+```{r}
+IBM_freq<-IBM_text%>%
+  unnest_tokens(word,IBMpdf_text)%>%
+  anti_join(get_stopwords())%>%
+  filter(!word %in% c("t.co", "https","it's","like","let","can","us"))%>%
+  count(word)%>%
+  arrange(desc(n))
+
+IBM_freq
+```
+
+```{r}
+microsoft_freq<-microsoft_text%>%
+  unnest_tokens(word,micropdf_text)%>%
+  anti_join(get_stopwords())%>%
+  filter(!word %in% c("t.co", "https","it's","like","let","can","us"))%>%
+  count(word)%>%
+  arrange(desc(n))
+
+microsoft_freq
+```
+
+```{r}
+amazon_freq<-amazon_text%>%
+  unnest_tokens(word,amazonpdf_text)%>%
+  anti_join(get_stopwords())%>%
+  filter(!word %in% c("t.co", "https","it’s","like","let","can","us"))%>%
+  count(word)%>%
+  arrange(desc(n))
+
+amazon_freq
+```
+
+
+
+```{r}
+IBM_freq%>%
+  top_n(100)%>%
+  group_by(word)%>%
+  summarise(n = sum(n))%>%
+  ungroup()%>%
+  wordcloud2(size = 1)
+```
+```{r}
+microsoft_freq%>%
+  top_n(100)%>%
+  group_by(word)%>%
+  summarise(n = sum(n))%>%
+  ungroup()%>%
+  wordcloud2(size = 0.8)
+```
+
+```{r}
+amazon_freq%>%
+  top_n(100)%>%
+  group_by(word)%>%
+  summarise(n = sum(n))%>%
+  ungroup()%>%
+  wordcloud2(size = 0.8)
+```
+
+## Bigram Analysis 
+```{r}
+IBMbigram_freq<-IBM_text%>%
+  unnest_tokens(bigram, IBMpdf_text, token = "ngrams", n = 2, n_min = 2)%>%
+  group_by(bigram)%>%
+  summarise(n=n())%>%
+  ungroup()%>%
+  separate(bigram, c("word1", "word2"), sep = " ")%>%
+  anti_join(stop_words,by = c("word1" = "word"))%>%
+  anti_join(stop_words,by = c("word2" = "word"))%>%
+  mutate(bigram = paste(word1,word2))%>%
+  select(bigram,n)%>%
+  arrange(desc(n))
+
+IBMbigram_freq
+```
+```{r}
+microsoftbigram_freq<-microsoft_text%>%
+  unnest_tokens(bigram, micropdf_text, token = "ngrams", n = 2, n_min = 2)%>%
+  group_by(bigram)%>%
+  summarise(n=n())%>%
+  ungroup()%>%
+  separate(bigram, c("word1", "word2"), sep = " ")%>%
+  anti_join(stop_words,by = c("word1" = "word"))%>%
+  anti_join(stop_words,by = c("word2" = "word"))%>%
+  mutate(bigram = paste(word1,word2))%>%
+  select(bigram,n)%>%
+  arrange(desc(n))
+
+microsoftbigram_freq
+```
+
+```{r}
+amazonbigram_freq<-amazon_text%>%
+  unnest_tokens(bigram, amazonpdf_text, token = "ngrams", n = 2, n_min = 2)%>%
+  group_by(bigram)%>%
+  summarise(n=n())%>%
+  ungroup()%>%
+  separate(bigram, c("word1", "word2"), sep = " ")%>%
+  anti_join(stop_words,by = c("word1" = "word"))%>%
+  anti_join(stop_words,by = c("word2" = "word"))%>%
+  mutate(bigram = paste(word1,word2))%>%
+  select(bigram,n)%>%
+  arrange(desc(n))
+
+amazonbigram_freq
+```
+
+```{r}
+IBMbigram_freq%>%
+  top_n(100,n)%>%
+  wordcloud2(size = 0.7)
+```
+
+```{r}
+microsoftbigram_freq%>%
+  top_n(100,n)%>%
+  wordcloud2(size = 0.5)
+```
+
+```{r}
+amazonbigram_freq%>%
+  top_n(100,n)%>%
+  wordcloud2(size = 0.5)
+```
+
+
+## Sentiments
+```{r}
+sentiment_ibmletter <- IBM_freq %>%
+  inner_join(get_sentiments("bing")) %>%
+  mutate(n = if_else(sentiment == "negative", -n, n))
+
+sentiment_ibmletter
+```
+
+
+```{r}
+sentiment_ibmletter%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))
+```
+
+```{r}
+sentiment_ibmletter%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))%>%
+  ggplot(aes(x=sentiment,y=n, fill = sentiment))+
+  geom_col()+
+  geom_text(aes(label = round(ratio,3)), position = position_dodge(0.9))
+```
+
+
+```{r}
+IBM_freq %>%
+  inner_join(get_sentiments("bing")) %>%
+  top_n(20,n)%>%
+  mutate(n = if_else(sentiment == "negative", -n, n))%>%
+  ggplot(aes(reorder(word, n), n, fill=sentiment)) +
+  geom_col() + 
+  coord_flip() +
+  labs(title = "IBM Top 20 and bottom terms by sentiment", x = "term", y="count")
+```
+
+```{r}
+sentiment_microletter <- microsoft_freq %>%
+  inner_join(get_sentiments("bing")) %>%
+  mutate(n = if_else(sentiment == "negative", -n, n))
+
+sentiment_microletter
+```
+
+
+```{r}
+sentiment_microletter%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))
+
+sentiment_microletter%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))%>%
+  ggplot(aes(x=sentiment,y=n, fill = sentiment))+
+  geom_col()+
+  geom_text(aes(label = round(ratio,3)), position = position_dodge(0.9))
+```
+
+```{r}
+microsoft_freq %>%
+  inner_join(get_sentiments("bing")) %>%
+  top_n(20,n)%>%
+  mutate(n = if_else(sentiment == "negative", -n, n))%>%
+  ggplot(aes(reorder(word, n), n, fill=sentiment)) +
+  geom_col() + 
+  coord_flip() +
+  labs(title = "Microsoft Top 20 and bottom terms by sentiment", x = "term", y="count")
+```
+
+```{r}
+sentiment_amazonletter <- amazon_freq %>%
+  inner_join(get_sentiments("bing")) %>%
+  mutate(n = if_else(sentiment == "negative", -n, n))
+
+sentiment_amazonletter
+```
+
+
+```{r}
+sentiment_amazonletter%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))
+
+sentiment_amazonletter%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))%>%
+  ggplot(aes(x=sentiment,y=n, fill = sentiment))+
+  geom_col()+
+  geom_text(aes(label = round(ratio,3)), position = position_dodge(0.9))
+```
+
+```{r}
+amazon_freq %>%
+  inner_join(get_sentiments("bing")) %>%
+  top_n(20,n)%>%
+  mutate(n = if_else(sentiment == "negative", -n, n))%>%
+  ggplot(aes(reorder(word, n), n, fill=sentiment)) +
+  geom_col() + 
+  coord_flip() +
+  labs(title = "Amazon Top 20 and bottom terms by sentiment", x = "term", y="count")
+```
+

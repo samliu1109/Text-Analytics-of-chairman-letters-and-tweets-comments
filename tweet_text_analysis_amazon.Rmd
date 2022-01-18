@@ -1,0 +1,271 @@
+---
+title: "weet_text_analysis_Amazon"
+author: "Poyi (Sam) Liu"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(lubridate)
+library(tidytext)
+library(topicmodels)
+library(wordcloud2)
+library(readr)
+library(stringr)
+library(twitteR)
+```
+
+```{r}
+api_key <- "your_key_here"
+api_secret <- "your_secret_here" 
+token <- "your_token_here" 
+token_secret <- "your_token_secret_here"  
+ 
+setup_twitter_oauth(api_key, api_secret, token, token_secret)
+```
+
+```{r}
+#Grab the last 10000 tweets
+d_tweets02<-searchTwitter("amazon", n=15000, lang="en")
+
+#Convert to a data frame
+d_tweets_df02 <- twListToDF(d_tweets02)
+
+#Standardise text encoding
+d_tweets_df02$text <-
+  str_conv(d_tweets_df02$text, 'UTF-8')
+
+saveRDS(d_tweets_df02, 'D:/medium/web scraping analytics/twitter_search_dataset03.RDS')
+```
+
+
+## Term Frequency & Wordcloud 
+```{r}
+tweet_freq02<-d_tweets_df02%>%
+  mutate(month = month(created))%>%
+  unnest_tokens(word,text)%>%
+  anti_join(get_stopwords())%>%
+  filter(!word %in% c("t.co", "https", "false", "twitter", "iphone", "amp", 
+                      "rt", "android","it's","like","let","us"))%>%
+  group_by(month,word)%>%
+  summarise(n=n())%>%
+  arrange(desc(n))  
+
+tweet_freq02
+```
+
+
+```{r}
+tweet_freq02%>%
+  ungroup()%>%
+  select(-month)%>%
+  group_by(word)%>%
+  summarise(n = sum(n))%>%
+  ungroup()%>%
+  wordcloud2(size = 2)
+```
+
+
+## Bigram Analysis 
+```{r}
+bigram_freq02<-d_tweets_df02%>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2, n_min = 2)%>%
+  group_by(bigram)%>%
+  summarise(n=n())%>%
+  ungroup()%>%
+  separate(bigram, c("word1", "word2"), sep = " ")%>%
+  anti_join(stop_words,by = c("word1" = "word"))%>%
+  anti_join(stop_words,by = c("word2" = "word"))%>%
+  filter(!word1 %in% c("t.co", "https", "false", "twitter", "iphone", "amp", 
+                      "rt", "android","it's","like","let","us"),
+         !word2 %in% c("t.co", "https", "false", "twitter", "iphone", "amp", 
+                      "rt", "android","it's","like","let","us"),
+         !str_detect(word1,"^\\d"),
+         !str_detect(word2,"^\\d"))%>%
+  mutate(bigram = paste(word1,word2))%>%
+  select(bigram,n)%>%
+  arrange(desc(n))
+
+bigram_freq02
+```
+
+
+```{r}
+bigram_freq02%>%
+  top_n(100,n)%>%
+  wordcloud2(size = 0.5)
+```
+
+
+```{r}
+bigram_freq02%>%
+  filter(str_detect(bigram,"^cloud"))%>%
+  top_n(20,n)%>%
+  ggplot(aes(x=reorder(bigram, n),y=n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Frequency of cloud", x="cloud",y="counts")
+```
+
+```{r}
+bigram_freq02%>%
+  filter(str_detect(bigram,"cloud$"))%>%
+  top_n(20,n)%>%
+  ggplot(aes(x=reorder(bigram, n),y=n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Frequency of cloud", x="cloud",y="counts")
+```
+
+
+```{r}
+bigram_freq02%>%
+  filter(str_detect(bigram,"^aws"))%>%
+  top_n(20,n)%>%
+  ggplot(aes(x=reorder(bigram, n),y=n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Frequency of aws", x="aws",y="counts")
+```
+
+
+```{r}
+bigram_freq02%>%
+  filter(str_detect(bigram,"aws$"))%>%
+  top_n(20,n)%>%
+  ggplot(aes(x=reorder(bigram, n),y=n)) +
+  geom_col() +
+  coord_flip() +
+  labs(title = "Frequency of aws", x="aws",y="counts")
+```
+
+
+
+## Sentiments
+```{r}
+sentiment_aws <- tweet_freq02 %>%
+  inner_join(get_sentiments("bing")) %>%
+  #group_by(month,sentiment) %>%
+  #top_n(30,n)%>%
+  mutate(n = if_else(sentiment == "negative", -n, n))
+
+sentiment_aws
+```
+
+
+
+```{r}
+sentiment_by_month02 <- tweet_freq02 %>%
+  inner_join(get_sentiments("bing")) %>%
+  group_by(month,sentiment) %>%
+  top_n(100,n)%>%
+  mutate(n = if_else(sentiment == "negative", -n, n))
+
+sentiment_by_month02
+```
+
+```{r}
+sentiment_by_month02%>%
+  ungroup()%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))
+
+sentiment_by_month02%>%
+  ungroup()%>%
+  count(sentiment)%>%
+  mutate(ratio = n/sum(n))%>%
+  ggplot(aes(x=sentiment,y=n, fill = sentiment))+
+  geom_col()+
+  geom_text(aes(label = round(ratio,3)), position = position_dodge(0.9))+
+  labs(title = "Ratio of Positive and Negative words-Amazon", y="count")
+```
+
+
+```{r}
+tweet_freq02 %>%
+  inner_join(get_sentiments("bing")) %>%
+  group_by(month,sentiment) %>%
+  top_n(20,n)%>%
+  mutate(n = if_else(sentiment == "negative", -n, n))%>%
+  ggplot(aes(reorder(word, n), n, fill=sentiment)) +
+  geom_col() + 
+  coord_flip() +
+  labs(title = "Amazon-Top and bottom 20 terms by sentiment", x = "term", y="count")
+```
+
+
+## Topic Prep 
+```{r}
+tweet_dtm02<-d_tweets_df02%>%
+  unnest_tokens(word,text)%>%
+  anti_join(get_stopwords())%>%
+  filter(!word %in% c("t.co", "https", "false", "twitter", "iphone", "amp", 
+                      "rt", "android","it's","like","let","us"))%>%
+  group_by(id,word)%>%
+  summarise(n=n())%>%
+  top_n(50,n)
+tweet_dtm02
+```
+```{r}
+tweet_dtm02<-d_tweets_df02%>%
+  unnest_tokens(bigram, text, token = "ngrams", n = 2, n_min = 2)%>%
+  separate(bigram, c("word1", "word2"), sep = " ")%>%
+  anti_join(stop_words,by = c("word1" = "word"))%>%
+  anti_join(stop_words,by = c("word2" = "word"))%>%
+  filter(!word1 %in% c("t.co", "https", "false", "twitter", "iphone", "amp", 
+                      "rt", "yesterday","it's","2022","jwraewqub1","100daysofcode",
+                      "lec","gt","sabr","jumadal","dot","ss3","link","lt","na","it’s"),
+         !word2 %in% c("t.co", "https", "false", "twitter", "iphone", "amp", 
+                      "rt", "yesterday","it's","2022","jwraewqub1","100daysofcode",
+                      "lec","gt","sabr","jumadal","dot","ss3","link","lt","na","it’s"),
+         !str_detect(word1,"^\\d"),
+         !str_detect(word2,"^\\d"))%>%
+  mutate(bigram = paste(word1,word2))%>%
+  group_by(id,bigram)%>%
+  summarise(n=n())%>%
+  arrange(desc(n))
+```
+
+
+```{r}
+tweet_dtm02 <- tweet_dtm02 %>% cast_dtm(id, bigram, n)
+tweet_lda02 <- LDA(tweet_dtm02, k = 3, method = "Gibbs", control = list(seed = 1234))
+```
+
+
+## Topic Model 
+```{r}
+tidy_tweet02 <- tidy(tweet_lda02,matrix = "beta")
+
+tweet_topic_terms02 <- tidy_tweet02 %>%
+  group_by(topic) %>%
+  filter(term != "it’s") %>%
+  top_n(10,beta) %>%
+  ungroup()%>%
+  arrange(topic)
+
+tweet_topic_terms02
+
+```
+
+```{r}
+tweet_topic_terms02 %>%
+  mutate(term = reorder(term, beta)) %>%
+  #ungroup() %>%
+  arrange(desc(beta)) %>%  
+  ggplot(aes(reorder(term, beta), beta, fill = as.factor(topic))) +
+  geom_col(show.legend = FALSE, size = 0.5) +
+  coord_flip() +
+  labs(title = "Topic Terms",
+       x = NULL, y = expression(beta)) + 
+  facet_wrap(~ topic, ncol = 5, scales = "free")+
+  theme(axis.text = element_text(size = 7))+
+  labs(title = "Amazon-Top 10 Topic Terms")
+```
+
+
+
